@@ -1,0 +1,27 @@
+camera_index: 0
+tolerance: 0.8
+faces_dir: faces
+process_every_n_frames: 2
+# Detection tuning
+# - detection_model: 'hog' (fast) or 'cnn' (more accurate, slower if dlib built with CNN)
+# - upsample_times: how many times to upsample when detecting faces (0..2+). Higher
+#   values improve detection for small/far faces but increase CPU/time.
+detection_model: hog
+upsample_times: 1
+# Scale controls how much the frame is downsampled for processing. Increase toward
+# 1.0 to keep more detail (better for far faces), decrease (e.g. 0.25) for speed.
+scale: 0.5
+
+# Presets (you can copy one of these sections into the top-level config):
+# far_face:
+#   detection_model: hog
+#   upsample_times: 2
+#   scale: 0.5
+# balanced:
+#   detection_model: hog
+#   upsample_times: 1
+#   scale: 0.5
+# accurate_slow:
+#   detection_model: cnn
+#   upsample_times: 0
+#   scale: 0.5
