@@ -52,10 +52,100 @@ Having these installed ensures `dlib` can be built if a compatible prebuilt whee
 
 If you prefer to avoid a local build, look for a prebuilt `dlib` wheel matching your Python version and architecture.
 
-## Behavior and on-disk format
-- Encodings: each face encoding is saved as `<stem>.npy` in the `faces/` directory (e.g. `alice.npy`). The app will scan `faces/` on startup and create missing `.npy` files for any images found there.
-- No image files are written or copied by the app — image files you add remain unchanged.
-- The app draws bounding boxes and labels on the live camera feed and prints timestamped match/unknown events to the console.
+
+## Configuration and tuning
+`config.yaml` holds the runtime options you can tweak to trade accuracy vs performance. Below are the most useful knobs, what they do, and recommended starting values.
+
+- `detection_model` (string): which face detector to use. Options:
+	- `hog` — CPU-friendly and fast; good for most desktop/server use.
+	- `cnn` — usually more accurate on difficult poses/lighting but much slower and requires a dlib build with CNN support (may not be available on all platforms).
+	- Recommended start: `hog`.
+
+- `upsample_times` (int, >= 0): how many times to upsample the image when searching for faces. Upsampling makes faces effectively larger so the detector can find smaller/far faces.
+	- Effect: +1 upsample ≈ doubles detector work for that axis; try `1` or `2` if distant faces are missed.
+	- Recommended start: `1` (increase if you miss far faces).
+
+- `scale` (float, 0.1..1.0): the factor used to downsample frames before detection (e.g. `0.5` keeps half the width/height). Lower values are faster but lose detail; higher values keep more detail and improve distant-face detection.
+	- Recommended start: `0.5` (use `0.25` for constrained devices; use `0.6`–`1.0` for best accuracy if CPU allows).
+
+- `tolerance` (float): distance threshold for accepting a match. Smaller values are stricter (fewer false positives); larger values are more permissive.
+	- Typical range: `0.4`–`0.7`. Recommended default: `0.6`.
+
+Presets (copy these into `config.yaml` to try quickly):
+
+- Balanced (default):
+	- `detection_model: hog`
+	- `upsample_times: 1`
+	- `scale: 0.5`
+	- `tolerance: 0.6`
+
+- Far faces (more sensitive, slower):
+	- `detection_model: hog`
+	- `upsample_times: 2`
+	- `scale: 0.6`
+	- `tolerance: 0.6`
+
+- Fast (low CPU):
+	- `detection_model: hog`
+	- `upsample_times: 0`
+	- `scale: 0.25`
+	- `tolerance: 0.6`
+
+- Accurate (if you have a CNN-capable dlib build):
+	- `detection_model: cnn`
+	- `upsample_times: 0`
+	- `scale: 0.5`
+	- `tolerance: 0.55`
+
+Step-by-step tuning guide
+
+1. Start with the Balanced preset.
+2. If the app misses faces that are far from the camera:
+	 - increase `scale` (e.g. `0.6`), then test; if still missed, increase `upsample_times` to `1` or `2`.
+3. If the app is too slow or you need lower CPU usage:
+	 - reduce `scale` (e.g. `0.25`) and set `upsample_times: 0`.
+4. If you get false positives (wrong matches):
+	 - reduce `tolerance` toward `0.5` (be careful — too low may reject valid matches).
+5. When you change `config.yaml`, restart the app to apply the new settings.
+
+If you want, I can add a `config.presets.yaml` file with these presets or apply a preset to your current `config.yaml` now.
+
+## How the system works
+This section explains the end-to-end flow and the role of each component.
+
+1. Capture (OpenCV)
+	- `app.py` opens the webcam via `cv2.VideoCapture` and reads frames in a loop.
+	- Frames are optionally resized (`scale` in `config.yaml`) to trade accuracy for speed.
+
+2. Detection (`face_recognition` / dlib)
+	- For each processed frame, the code calls `face_recognition.face_locations(...)` to detect face bounding boxes.
+	- The detector can run in two modes: `hog` (faster, CPU-only) or `cnn` (more accurate, may require a dlib build with CNN support).
+	- `upsample_times` controls how many times the detector upsamples the image before searching; higher values help find smaller/far faces.
+
+3. Alignment & Embedding (`recognizer.py` / dlib)
+	- Detected bounding boxes are passed to the `FaceRecognizer` which attempts to compute aligned face "chips" using a dlib shape predictor.
+	- Each face chip is passed through the dlib ResNet-based face recognition model to produce a 128-dimensional embedding (descriptor).
+	- The implementation uses a chip-based approach (via `get_face_chip`) which aligns faces to a canonical orientation, improving embedding consistency.
+
+4. Matching
+	- Face embeddings from the current frame are compared to known embeddings loaded from `face_db.py` using cosine/EUCLIDEAN-style distance (the code uses `face_recognition.face_distance` and a `tolerance` threshold).
+	- If a nearest known embedding is within `tolerance`, the face is considered a match and the known name is reported; otherwise it is reported as "Not recognized".
+
+5. Persistence (`face_db.py`)
+	- Known face embeddings are stored on disk as `.npy` files under the `faces/` directory (one encoding file per identity image). This makes inspecting and managing encodings straightforward.
+	- At startup the app scans `faces/` and loads all `.npy` encodings into memory. If it finds image files without an accompanying `.npy`, it will compute and save the encoding.
+
+6. Notifier (`notifier.py`)
+	- When a match or unknown event occurs the app calls the notifier. The default `notifier.py` prints timestamped messages to the console, but you can replace it with a webhook, MQTT publisher, or other action handler.
+
+7. UI / Display (OpenCV)
+	- The app draws bounding boxes and labels on the video frames and shows them in a window using OpenCV.
+	- The code includes logic to detect window closure and exit cleanly to avoid re-opening the window after the user closes it.
+
+8. Performance considerations
+	- The pipeline downscales frames (controlled by `scale`) and optionally skips processing on alternating frames to maintain responsiveness.
+	- For farther/smaller faces: increase `upsample_times` and `scale` (slower but more sensitive).
+	- For embedded or CPU-limited environments: keep `scale` small and `upsample_times` at 0, or consider replacing the detector with a lightweight NN specialized for low-power devices.
 
 Configuration and tuning
 - `config.yaml` contains runtime options. Important tuning knobs:
