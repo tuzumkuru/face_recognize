@@ -17,13 +17,9 @@ def load_config(path="config.yaml"):
     return {
         "camera_index": 0,
         "tolerance": 0.6,
-        "encoding_file": "encodings.pkl",
         "faces_dir": "faces",
         "process_every_n_frames": 2,
-        # detection options: 'hog' (fast) or 'cnn' (more accurate, slower)
         "detection_model": "hog",
-        # how many times to upsample the image when looking for faces (0..2+). Increasing
-        # this helps detect small/far faces at the cost of CPU.
         "upsample_times": 0,
     }
 
